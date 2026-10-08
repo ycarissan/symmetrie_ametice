@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="symmetrie_orbitale_module3" version="1.0" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/imscp_v1p1 imscp_v1p1.xsd http://www.imsglobal.org/xsd/imsmd_v1p2p1 imsmd_v1p2p1.xsd http://www.adlnet.org/xsd/adlcp_v1p3 adlcp_v1p3.xsd">
+
+  <!-- Metadata -->
+  <metadata>
+    <schema>ADL SCORM</schema>
+    <schemaversion>1.2</schemaversion>
+  </metadata>
+
+  <!-- Organizations -->
+  <organizations default="symmetrie_org">
+    <organization identifier="symmetrie_org">
+      <title>Symétrie des Orbitales Atomiques - Module 3 : Atome Isolé</title>
+      <item identifier="module3" identifierref="module3_resource" isvisible="true">
+        <title>Atome Isolé - Orbitales s et p</title>
+        <metadata>
+          <adlcp:location>index.html</adlcp:location>
+        </metadata>
+      </item>
+    </organization>
+  </organizations>
+
+  <!-- Resources -->
+  <resources>
+    <resource identifier="module3_resource" type="webcontent" adlcp:scormtype="sco" href="index.html">
+      <metadata>
+        <adlcp:location>index.html</adlcp:location>
+      </metadata>
+      <file href="index.html"/>
+      <file href="style.css"/>
+      <file href="script.js"/>
+      <file href="scorm_helper.js"/>
+      <file href="three.min.js"/>
+      <file href="OrbitControls.js"/>
+      <dependency identifierref="threejs_lib"/>
+    </resource>
+    
+    <resource identifier="threejs_lib" type="webcontent" adlcp:scormtype="asset" href="three.min.js">
+      <file href="three.min.js"/>
+    </resource>
+  </resources>
+
+</manifest>
