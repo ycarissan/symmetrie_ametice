@@ -1,14 +1,6 @@
 /**
  * Symétrie des Orbitales Atomiques - Module 3 : Atome Isolé
- * Prototype SCORM pour Moodle - Version validée
- * 
- * Fonctionnalités :
- * - Visualisation 3D des orbitales s, p_x, p_y, p_z (avec sphères)
- * - Application des opérations de symétrie (σ, Cₙ, i)
- * - Animation fluide avec contrôle par curseur
- * - Conservation de l'orbitale transformée à la fin
- * - Légende avec tooltip au survol
- * - Intégration SCORM 1.2
+ * Prototype SCORM pour Moodle - Version finale corrigée
  */
 
 // ============================================
@@ -20,7 +12,6 @@ let orbitalGroup, symmetryElementGroup, animatedOrbitalGroup;
 
 let currentOrbital = 's';
 let currentSymmetry = 'E';
-let showPhases = true;
 
 // Animation
 let animationData = null;
@@ -41,7 +32,7 @@ const COLORS = {
 };
 
 // ============================================
-// INITIALISATION THREE.JS
+// INITIALISATION
 // ============================================
 
 function initThreeJS() {
@@ -77,11 +68,9 @@ function initThreeJS() {
     directionalLight2.position.set(-5, -5, -5);
     scene.add(directionalLight2);
     
-    // Grille
+    // Grille et axes
     const gridHelper = new THREE.GridHelper(10, 10, COLORS.grid, COLORS.grid);
     scene.add(gridHelper);
-    
-    // Axes
     const axesHelper = new THREE.AxesHelper(5);
     scene.add(axesHelper);
     
@@ -125,7 +114,7 @@ function animate() {
 }
 
 // ============================================
-// ANIMATION
+// ANIMATION - CORRIGÉE
 // ============================================
 
 function updateAnimation() {
@@ -141,12 +130,10 @@ function updateAnimation() {
     for (let i = 0; i < group.children.length; i++) {
         const child = group.children[i];
         if (child.type === 'Mesh' && originalPositions[i]) {
-            // Interpolation linéaire des positions
             child.position.x = originalPositions[i].x + (targetPositions[i].x - originalPositions[i].x) * progress;
             child.position.y = originalPositions[i].y + (targetPositions[i].y - originalPositions[i].y) * progress;
             child.position.z = originalPositions[i].z + (targetPositions[i].z - originalPositions[i].z) * progress;
             
-            // Interpolation des couleurs
             if (originalColors[i] && targetColors[i]) {
                 const startColor = new THREE.Color(originalColors[i]);
                 const endColor = new THREE.Color(targetColors[i]);
@@ -189,12 +176,16 @@ function startAnimation(symmetry) {
             break;
     }
     
-    // Masquer l'orbitale principale
-    orbitalGroup.visible = false;
+    // RENDRE L'ORBITALE PRINCIPALE SEMI-TRANSPARENTE (au lieu de la masquer)
+    setGroupOpacity(orbitalGroup, 0.3);
     
     // Cloner l'orbitale actuelle pour l'animation
     clearGroup(animatedOrbitalGroup);
     const animationGroup = cloneGroup(orbitalGroup);
+    
+    // Rendre l'animation opaque
+    setGroupOpacity(animationGroup, 1.0);
+    
     animatedOrbitalGroup.add(animationGroup);
     animatedOrbitalGroup.visible = true;
     
@@ -204,6 +195,7 @@ function startAnimation(symmetry) {
     const originalColors = [];
     const targetColors = [];
     
+    // Récupérer les positions des lobes DE L'ORBITALE ANIMÉE
     animationGroup.children.forEach(child => {
         if (child.type === 'Mesh' && child.geometry && child.geometry.type === 'SphereGeometry') {
             originalPositions.push(child.position.clone());
@@ -250,9 +242,10 @@ function endAnimation() {
     animatedOrbitalGroup.visible = false;
     clearGroup(animatedOrbitalGroup);
     
-    // Réafficher l'orbitale principale avec son nouvel état
-    orbitalGroup.visible = true;
+    // Rétablir l'opacité de l'orbitale principale
+    setGroupOpacity(orbitalGroup, 1.0);
     
+    // Mettre à jour l'orbitale principale avec l'état final
     const newOrbital = animationData.newOrbital;
     const signChange = animationData.signChange;
     
@@ -261,17 +254,32 @@ function endAnimation() {
     document.getElementById('current-orbital').innerHTML = getOrbitalDisplayName(newOrbital);
     document.getElementById('orbital-select').value = newOrbital;
     
-    // Appliquer les changements à l'orbitale principale
+    // Appliquer les changements
     if (newOrbital !== animationData.initialOrbital && !newOrbital.startsWith('-')) {
         setOrbital(newOrbital);
     } else if (signChange) {
         invertOrbitalColors();
     }
-    // Sinon, l'orbitale est symétrique et reste inchangée
     
     // Désactiver le slider
     animationSlider.disabled = true;
     animationData = null;
+}
+
+function setGroupOpacity(group, opacity) {
+    group.traverse(child => {
+        if (child.material) {
+            if (child.material instanceof Array) {
+                child.material.forEach(mat => {
+                    mat.transparent = true;
+                    mat.opacity = opacity;
+                });
+            } else {
+                child.material.transparent = true;
+                child.material.opacity = opacity;
+            }
+        }
+    });
 }
 
 // ============================================
@@ -295,7 +303,7 @@ function createSOrbital() {
     const edges = new THREE.EdgesGeometry(geometry);
     const line = new THREE.LineSegments(
         edges, 
-        new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 })
+        new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1, transparent: true, opacity: 0.5 })
     );
     orbitalGroup.add(line);
 }
@@ -329,9 +337,7 @@ function createLobe(color) {
 function createPOrbital(axis) {
     clearGroup(orbitalGroup);
     
-    let posPositions = { x: 0, y: 0, z: 0 };
-    let negPositions = { x: 0, y: 0, z: 0 };
-    
+    let posPositions, negPositions;
     if (axis === 'x') {
         posPositions = { x: LOBE_DISTANCE * ORBITAL_SCALE, y: 0, z: 0 };
         negPositions = { x: -LOBE_DISTANCE * ORBITAL_SCALE, y: 0, z: 0 };
@@ -382,9 +388,7 @@ function clearSymmetryGroup() {
 // ============================================
 
 function transformPoint(point, symmetry) {
-    const x = point.x;
-    const y = point.y;
-    const z = point.z;
+    const x = point.x, y = point.y, z = point.z;
     
     switch (symmetry) {
         case 'E': return new THREE.Vector3(x, y, z);
@@ -395,13 +399,8 @@ function transformPoint(point, symmetry) {
         case 'C2_y': return new THREE.Vector3(-x, y, -z);
         case 'C2_z': return new THREE.Vector3(-x, -y, z);
         case 'C3_z': {
-            const cos120 = Math.cos(2 * Math.PI / 3);
-            const sin120 = Math.sin(2 * Math.PI / 3);
-            return new THREE.Vector3(
-                x * cos120 - y * sin120,
-                x * sin120 + y * cos120,
-                z
-            );
+            const c = Math.cos(2 * Math.PI / 3), s = Math.sin(2 * Math.PI / 3);
+            return new THREE.Vector3(x * c - y * s, x * s + y * c, z);
         }
         case 'C4_z': return new THREE.Vector3(-y, x, z);
         case 'i': return new THREE.Vector3(-x, -y, -z);
@@ -411,89 +410,44 @@ function transformPoint(point, symmetry) {
 
 function transformPOrbital(orbital, symmetry) {
     const axis = orbital.split('_')[1];
-    
     switch (symmetry) {
         case 'E': return orbital;
-        case 'sigma_xz': 
-            if (axis === 'x') return orbital;
-            if (axis === 'y') return '-' + orbital;
-            if (axis === 'z') return orbital;
-            break;
-        case 'sigma_yz':
-            if (axis === 'x') return '-' + orbital;
-            if (axis === 'y') return orbital;
-            if (axis === 'z') return orbital;
-            break;
-        case 'sigma_xy':
-            if (axis === 'x') return orbital;
-            if (axis === 'y') return orbital;
-            if (axis === 'z') return '-' + orbital;
-            break;
-        case 'C2_x':
-            if (axis === 'x') return orbital;
-            if (axis === 'y') return '-' + orbital;
-            if (axis === 'z') return '-' + orbital;
-            break;
-        case 'C2_y':
-            if (axis === 'x') return '-' + orbital;
-            if (axis === 'y') return orbital;
-            if (axis === 'z') return '-' + orbital;
-            break;
-        case 'C2_z':
-            if (axis === 'x') return '-' + orbital;
-            if (axis === 'y') return '-' + orbital;
-            if (axis === 'z') return orbital;
-            break;
-        case 'C3_z':
-            if (axis === 'x') return 'p_y';
-            if (axis === 'y') return '-p_x';
-            if (axis === 'z') return orbital;
-            break;
-        case 'C4_z':
-            if (axis === 'x') return 'p_y';
-            if (axis === 'y') return '-p_x';
-            if (axis === 'z') return orbital;
-            break;
+        case 'sigma_xz': return (axis === 'y') ? '-' + orbital : orbital;
+        case 'sigma_yz': return (axis === 'x') ? '-' + orbital : orbital;
+        case 'sigma_xy': return (axis === 'z') ? '-' + orbital : orbital;
+        case 'C2_x': return (axis === 'y' || axis === 'z') ? '-' + orbital : orbital;
+        case 'C2_y': return (axis === 'x' || axis === 'z') ? '-' + orbital : orbital;
+        case 'C2_z': return (axis === 'x' || axis === 'y') ? '-' + orbital : orbital;
+        case 'C3_z': return (axis === 'x') ? 'p_y' : (axis === 'y') ? '-p_x' : orbital;
+        case 'C4_z': return (axis === 'x') ? 'p_y' : (axis === 'y') ? '-p_x' : orbital;
         case 'i': return '-' + orbital;
         default: return orbital;
     }
-    return orbital;
 }
 
 function getPOrbitalExplanation(orbital, symmetry, signChange) {
     const symmetryName = getSymmetryName(symmetry);
-    
-    if (signChange) {
-        return `L'orbitale <strong>${orbital}</strong> est <strong>antisymétrique</strong> par rapport à ${symmetryName} : elle change de signe.`;
-    } else {
-        return `L'orbitale <strong>${orbital}</strong> est <strong>symétrique</strong> par rapport à ${symmetryName} : elle reste inchangée.`;
-    }
+    return signChange 
+        ? `L'orbitale <strong>${orbital}</strong> est <strong>antisymétrique</strong> par rapport à ${symmetryName} : elle change de signe.`
+        : `L'orbitale <strong>${orbital}</strong> est <strong>symétrique</strong> par rapport à ${symmetryName} : elle reste inchangée.`;
 }
 
 function getSymmetryName(symmetry) {
     const names = {
-        'E': 'l\'identité',
-        'sigma_xz': 'le plan miroir σ<sub>xz</sub>',
-        'sigma_yz': 'le plan miroir σ<sub>yz</sub>',
-        'sigma_xy': 'le plan miroir σ<sub>xy</sub>',
-        'C2_x': 'la rotation C<sub>2</sub> autour de x',
-        'C2_y': 'la rotation C<sub>2</sub> autour de y',
-        'C2_z': 'la rotation C<sub>2</sub> autour de z',
-        'C3_z': 'la rotation C<sub>3</sub> autour de z',
-        'C4_z': 'la rotation C<sub>4</sub> autour de z',
-        'i': 'l\'inversion'
+        'E': 'l\'identité', 'sigma_xz': 'le plan miroir σ<sub>xz</sub>',
+        'sigma_yz': 'le plan miroir σ<sub>yz</sub>', 'sigma_xy': 'le plan miroir σ<sub>xy</sub>',
+        'C2_x': 'la rotation C<sub>2</sub> autour de x', 'C2_y': 'la rotation C<sub>2</sub> autour de y',
+        'C2_z': 'la rotation C<sub>2</sub> autour de z', 'C3_z': 'la rotation C<sub>3</sub> autour de z',
+        'C4_z': 'la rotation C<sub>4</sub> autour de z', 'i': 'l\'inversion'
     };
     return names[symmetry] || symmetry;
 }
 
 function invertOrbitalColors() {
     orbitalGroup.children.forEach(child => {
-        if (child.type === 'Mesh' && child.geometry && child.geometry.type === 'SphereGeometry') {
-            if (child.material.color.getHex() === COLORS.positive) {
-                child.material.color.setHex(COLORS.negative);
-            } else if (child.material.color.getHex() === COLORS.negative) {
-                child.material.color.setHex(COLORS.positive);
-            }
+        if (child.type === 'Mesh' && child.geometry?.type === 'SphereGeometry') {
+            const color = child.material.color.getHex();
+            child.material.color.setHex(color === COLORS.positive ? COLORS.negative : COLORS.positive);
         }
     });
 }
@@ -504,107 +458,84 @@ function invertOrbitalColors() {
 
 function visualizeSymmetryElement(symmetry) {
     clearSymmetryGroup();
-    
-    const color = COLORS.neutral;
-    const opacity = 0.3;
+    const color = COLORS.neutral, opacity = 0.3;
     
     switch (symmetry) {
         case 'E': break;
-        case 'sigma_xz':
-            const planeXZ = new THREE.Mesh(
-                new THREE.PlaneGeometry(20, 20, 10, 10),
-                new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity, side: THREE.DoubleSide })
-            );
-            planeXZ.rotation.x = Math.PI / 2;
-            symmetryElementGroup.add(planeXZ);
-            addSymmetryLabel(planeXZ, 'σ<sub>xz</sub>');
-            break;
-        case 'sigma_yz':
-            const planeYZ = new THREE.Mesh(
-                new THREE.PlaneGeometry(20, 20, 10, 10),
-                new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity, side: THREE.DoubleSide })
-            );
-            symmetryElementGroup.add(planeYZ);
-            addSymmetryLabel(planeYZ, 'σ<sub>yz</sub>');
-            break;
-        case 'sigma_xy':
-            const planeXY = new THREE.Mesh(
-                new THREE.PlaneGeometry(20, 20, 10, 10),
-                new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity, side: THREE.DoubleSide })
-            );
-            symmetryElementGroup.add(planeXY);
-            addSymmetryLabel(planeXY, 'σ<sub>xy</sub>');
-            break;
-        case 'C2_x':
-        case 'C3_x':
-        case 'C4_x':
-            symmetryElementGroup.add(createRotationAxis(10, 0x000000, 0.5));
-            break;
-        case 'C2_y':
-        case 'C3_y':
-        case 'C4_y':
-            const axisY = createRotationAxis(10, 0x000000, 0.5);
-            axisY.rotation.x = Math.PI / 2;
-            symmetryElementGroup.add(axisY);
-            break;
-        case 'C2_z':
-        case 'C3_z':
-        case 'C4_z':
-            symmetryElementGroup.add(createRotationAxis(10, 0x000000, 0.5));
-            break;
-        case 'i':
-            const center = new THREE.Mesh(
-                new THREE.SphereGeometry(0.2, 16, 16),
-                new THREE.MeshBasicMaterial({ color: 0x000000 })
-            );
-            symmetryElementGroup.add(center);
-            addSymmetryLabel(center, 'i');
-            break;
+        case 'sigma_xz': addPlane(0, Math.PI/2, 'σ<sub>xz</sub>'); break;
+        case 'sigma_yz': addPlane(0, 0, 'σ<sub>yz</sub>'); break;
+        case 'sigma_xy': addPlane(Math.PI/2, 0, 'σ<sub>xy</sub>'); break;
+        case 'C2_x': case 'C3_x': case 'C4_x': addAxis(0, 0, getSymmetryName(symmetry)); break;
+        case 'C2_y': case 'C3_y': case 'C4_y': addAxis(Math.PI/2, 0, getSymmetryName(symmetry)); break;
+        case 'C2_z': case 'C3_z': case 'C4_z': addAxis(0, 0, getSymmetryName(symmetry)); break;
+        case 'i': addInversionCenter(); break;
     }
 }
 
-function createRotationAxis(length, color, opacity) {
-    const geometry = new THREE.CylinderGeometry(0.05, 0.05, length, 32);
-    const material = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity });
-    const axis = new THREE.Mesh(geometry, material);
-    
-    const coneGeometry = new THREE.ConeGeometry(0.15, 0.5, 32);
-    const coneMaterial = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity });
-    const arrow = new THREE.Mesh(coneGeometry, coneMaterial);
+function addPlane(xRot, yRot, label) {
+    const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(20, 20),
+        new THREE.MeshBasicMaterial({ color: COLORS.neutral, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+    );
+    plane.rotation.x = xRot;
+    plane.rotation.y = yRot;
+    symmetryElementGroup.add(plane);
+    addSymmetryLabel(plane, label);
+}
+
+function addAxis(xRot, yRot, label) {
+    const axis = createRotationAxis(10);
+    axis.rotation.x = xRot;
+    axis.rotation.y = yRot;
+    symmetryElementGroup.add(axis);
+    addSymmetryLabel(axis, label);
+}
+
+function addInversionCenter() {
+    const center = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0x000000 })
+    );
+    symmetryElementGroup.add(center);
+    addSymmetryLabel(center, 'i');
+}
+
+function createRotationAxis(length) {
+    const axis = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.05, length, 32),
+        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 })
+    );
+    const arrow = new THREE.Mesh(
+        new THREE.ConeGeometry(0.15, 0.5, 32),
+        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 })
+    );
     arrow.position.y = length / 2;
     arrow.rotation.x = Math.PI;
     axis.add(arrow);
-    
     return axis;
 }
 
 function addSymmetryLabel(object, text) {
     const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 64;
-    const context = canvas.getContext('2d');
-    context.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.font = 'Bold 14px Arial';
-    context.fillStyle = 'white';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(text, canvas.width / 2, canvas.height / 2);
+    canvas.width = 128; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'Bold 14px Arial';
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width/2, canvas.height/2);
     
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(spriteMaterial);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
     sprite.scale.set(1, 0.5, 1);
     
-    const box = new THREE.Box3().setFromObject(object);
-    const center = box.getCenter(new THREE.Vector3());
+    const center = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
     sprite.position.copy(center);
     
-    if (object.type === 'Mesh' && object.geometry.type === 'PlaneGeometry') {
-        if (object.rotation.x === Math.PI / 2) sprite.position.y = 1;
-        else if (object.rotation.x === 0 && object.rotation.z === 0) sprite.position.z = -1;
-        else sprite.position.y = -1;
-    } else if (object.geometry && object.geometry.type === 'CylinderGeometry') {
+    if (object.geometry?.type === 'PlaneGeometry') {
+        sprite.position.y = object.rotation.x === Math.PI/2 ? 1 : -1;
+    } else if (object.geometry?.type === 'CylinderGeometry') {
         sprite.position.y = -0.5;
     }
     
@@ -612,64 +543,52 @@ function addSymmetryLabel(object, text) {
 }
 
 // ============================================
-// GESTION DE L'INTERFACE
+// INTERFACE
 // ============================================
 
 function setOrbital(orbital) {
     currentOrbital = orbital;
-    
     document.getElementById('current-orbital').innerHTML = getOrbitalDisplayName(orbital);
     document.getElementById('orbital-select').value = orbital;
     
     animatedOrbitalGroup.visible = false;
     clearGroup(animatedOrbitalGroup);
+    setGroupOpacity(orbitalGroup, 1.0);
     
-    orbitalGroup.visible = true;
-    
-    if (orbital === 's') {
-        createSOrbital();
-    } else {
-        const axis = orbital.split('_')[1];
-        createPOrbital(axis);
-    }
+    if (orbital === 's') createSOrbital();
+    else createPOrbital(orbital.split('_')[1]);
     
     showExplanation(orbital, 'E', orbital, 'Sélectionnez une opération de symétrie et cliquez sur "Appliquer".');
 }
 
 function getOrbitalDisplayName(orbital) {
-    const names = { 's': 's', 'p_x': 'p<sub>x</sub>', 'p_y': 'p<sub>y</sub>', 'p_z': 'p<sub>z</sub>' };
-    return names[orbital] || orbital;
+    return { 's': 's', 'p_x': 'p<sub>x</sub>', 'p_y': 'p<sub>y</sub>', 'p_z': 'p<sub>z</sub>' }[orbital] || orbital;
 }
 
 function showExplanation(initialOrbital, symmetry, newOrbital, explanation) {
-    const explanationDiv = document.getElementById('explanation');
-    
-    let html = `<h4>Résultat de ${getSymmetryName(symmetry)} sur ${getOrbitalDisplayName(initialOrbital)}</h4>`;
-    html += `<p>${explanation}</p>`;
-    
-    if (newOrbital.startsWith('-')) {
-        const baseOrbital = newOrbital.substring(1);
-        html += `<p><strong>Transformation : </strong>${getOrbitalDisplayName(initialOrbital)} → -${getOrbitalDisplayName(baseOrbital)}</p>`;
-    } else if (newOrbital !== initialOrbital) {
-        html += `<p><strong>Transformation : </strong>${getOrbitalDisplayName(initialOrbital)} → ${getOrbitalDisplayName(newOrbital)}</p>`;
-    } else {
-        html += `<p><strong>L'orbitale reste inchangée.</strong></p>`;
-    }
-    
-    explanationDiv.innerHTML = html;
-    explanationDiv.classList.add('fade-in');
-    setTimeout(() => explanationDiv.classList.remove('fade-in'), 500);
+    const html = `
+        <h4>Résultat de ${getSymmetryName(symmetry)} sur ${getOrbitalDisplayName(initialOrbital)}</h4>
+        <p>${explanation}</p>
+        ${newOrbital.startsWith('-') ? 
+            `<p><strong>Transformation : </strong>${getOrbitalDisplayName(initialOrbital)} → -${getOrbitalDisplayName(newOrbital.substring(1))}</p>` :
+            newOrbital !== initialOrbital ? 
+            `<p><strong>Transformation : </strong>${getOrbitalDisplayName(initialOrbital)} → ${getOrbitalDisplayName(newOrbital)}</p>` :
+            '<p><strong>L\'orbitale reste inchangée.</strong></p>'}
+    `;
+    const div = document.getElementById('explanation');
+    div.innerHTML = html;
+    div.classList.add('fade-in');
+    setTimeout(() => div.classList.remove('fade-in'), 500);
 }
 
 // ============================================
-// SCORM INTEGRATION
+// SCORM
 // ============================================
 
 function initSCORM() {
     const statusText = document.getElementById('scorm-status-text');
     if (SCORM.api) {
-        const studentName = SCORM.getStudentName();
-        statusText.textContent = studentName ? `Connecté : ${studentName}` : 'Connecté au LMS';
+        statusText.textContent = SCORM.getStudentName() ? `Connecté : ${SCORM.getStudentName()}` : 'Connecté au LMS';
         SCORM.setStatus(SCORM.status.INCOMPLETE);
         startSessionTimer();
     } else {
@@ -697,36 +616,20 @@ function finishModule() {
 }
 
 let startTime = null;
-
-function startSessionTimer() {
-    startTime = new Date();
-}
-
-function getSessionTime() {
-    if (!startTime) return 0;
-    return (new Date() - startTime) / 1000;
-}
+function startSessionTimer() { startTime = new Date(); }
+function getSessionTime() { return startTime ? (new Date() - startTime) / 1000 : 0; }
 
 // ============================================
 // ÉVÉNEMENTS
 // ============================================
 
 function attachEvents() {
-    // Sélecteurs
-    document.getElementById('orbital-select').addEventListener('change', function() {
-        setOrbital(this.value);
-    });
+    document.getElementById('orbital-select').addEventListener('change', () => setOrbital(this.value));
+    document.getElementById('symmetry-select').addEventListener('change', () => currentSymmetry = this.value);
     
-    document.getElementById('symmetry-select').addEventListener('change', function() {
-        currentSymmetry = this.value;
-    });
+    document.getElementById('apply-btn').addEventListener('click', () => startAnimation(currentSymmetry));
     
-    // Boutons
-    document.getElementById('apply-btn').addEventListener('click', function() {
-        startAnimation(currentSymmetry);
-    });
-    
-    document.getElementById('reset-btn').addEventListener('click', function() {
+    document.getElementById('reset-btn').addEventListener('click', () => {
         clearSymmetryGroup();
         endAnimation();
         setOrbital(currentOrbital);
@@ -737,47 +640,51 @@ function attachEvents() {
     });
     
     document.getElementById('finish-btn').addEventListener('click', finishModule);
-    
-    document.getElementById('reset-camera').addEventListener('click', function() {
+    document.getElementById('reset-camera').addEventListener('click', () => {
         camera.position.set(5, 5, 5);
         camera.lookAt(0, 0, 0);
         controls.reset();
     });
     
-    // Slider pour contrôler l'animation
     animationSlider = document.getElementById('animation-slider');
-    animationSlider.addEventListener('input', function() {
-        if (animationData) {
-            // Le slider contrôle directement l'animation via updateAnimation()
-            // Pas besoin de faire autre chose ici
-        }
+    animationSlider.addEventListener('input', () => {
+        if (animationData && parseInt(animationSlider.value) >= 100) endAnimation();
     });
-    
-    animationSlider.addEventListener('mouseup', function() {
-        // Si on lâche le slider à la fin, terminer l'animation
-        if (animationData && parseInt(this.value) >= 100) {
-            endAnimation();
-        }
+    animationSlider.addEventListener('mouseup', () => {
+        if (animationData && parseInt(animationSlider.value) >= 100) endAnimation();
     });
-    
-    animationSlider.addEventListener('touchend', function() {
-        if (animationData && parseInt(this.value) >= 100) {
-            endAnimation();
-        }
+    animationSlider.addEventListener('touchend', () => {
+        if (animationData && parseInt(animationSlider.value) >= 100) endAnimation();
     });
+}
+
+function cloneGroup(group) {
+    const cloned = new THREE.Group();
+    group.children.forEach(child => {
+        let c;
+        if (child.type === 'Mesh') {
+            c = child.clone();
+            c.material = child.material.clone();
+        } else if (child.type === 'LineSegments') {
+            c = child.clone();
+            if (child.material) c.material = child.material.clone();
+        } else {
+            c = child.clone();
+        }
+        if (c) cloned.add(c);
+    });
+    return cloned;
 }
 
 // ============================================
 // DÉMARRAGE
 // ============================================
 
-window.addEventListener('load', function() {
+window.addEventListener('load', () => {
     initThreeJS();
     initSCORM();
     attachEvents();
     setOrbital('s');
-    
-    // Initialiser le slider
     animationSlider = document.getElementById('animation-slider');
     animationSlider.disabled = true;
     animationSlider.value = 0;
