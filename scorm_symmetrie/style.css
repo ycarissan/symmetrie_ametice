@@ -461,3 +461,38 @@ body {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Éditeur des coefficients de la combinaison linéaire */
+.coef-editor summary {
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--primary-color);
+}
+
+.coef-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.coef-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+}
+
+.coef-row input {
+    width: 4.2rem;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid var(--light-gray);
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.coef-row input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
