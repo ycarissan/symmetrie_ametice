@@ -44,15 +44,15 @@ scorm_symmetrie/
 ### 🎯 Utilisation
 
 1. **Sélectionner une orbitale** (s, p_x, p_y, ou p_z)
-2. **Choisir une opération de symétrie** dans la liste
-3. **Cliquer sur "Appliquer la symétrie"**
+2. **Choisir une opération de symétrie** dans la liste (l'élément de symétrie s'affiche aussitôt)
+3. **Cliquer sur "Appliquer la symétrie"** : l'opération est animée
 4. Observer le résultat et lire l'explication
 
 **Contrôles 3D** :
 - **Souris** : Tourner la vue (cliquer + glisser)
 - **Molette** : Zoomer/dézoomer
 - **Bouton 🔄** : Réinitialiser la caméra
-- **Curseur d'animation** : faire glisser jusqu'à « Fin » pour appliquer l'opération
+- **Curseur d'animation** : suit l'animation lancée par « Appliquer » ; le déplacer met en pause et permet de parcourir l'opération
 
 ### 🔬 Exemples de transformations
 

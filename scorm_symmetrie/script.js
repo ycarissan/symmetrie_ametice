@@ -25,6 +25,7 @@ let representation = 'spheres';
 // Animation
 let animationData = null;
 let animationSlider;
+const ANIMATION_DURATION = 1500; // ms
 
 // Harmoniques sphériques réelles : Y(s) = 1/(2√π), Y(p) = √(3/4π)·cos θ
 const Y_S = 1 / (2 * Math.sqrt(Math.PI));
@@ -428,7 +429,8 @@ function setGroupOpacity(group, factor) {
 // ============================================
 
 function startAnimation(symmetry) {
-    cancelAnimation();
+    // Une opération encore en cours est menée à son terme avant d'enchaîner
+    endAnimation();
     visualizeSymmetryElement(symmetry);
 
     const initialState = orbitalState;
@@ -457,7 +459,11 @@ function startAnimation(symmetry) {
         group: animationGroup,
         lobes: lobes,
         symmetry: symmetry,
-        newState: newState
+        newState: newState,
+        progress: 0,
+        // Lecture automatique ; le curseur permet de reprendre la main à tout moment
+        playing: true,
+        startTime: performance.now()
     };
 
     animationSlider.disabled = false;
@@ -467,8 +473,22 @@ function startAnimation(symmetry) {
     updateSCORMStatus();
 }
 
+function easeInOut(x) {
+    return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+}
+
 function updateAnimation() {
-    const t = parseInt(animationSlider.value, 10) / 100;
+    if (animationData.playing) {
+        const elapsed = (performance.now() - animationData.startTime) / ANIMATION_DURATION;
+        animationData.progress = easeInOut(Math.min(elapsed, 1));
+        animationSlider.value = Math.round(animationData.progress * 100);
+        if (elapsed >= 1) {
+            endAnimation();
+            return;
+        }
+    }
+
+    const t = animationData.progress;
     const op = OPERATIONS[animationData.symmetry];
 
     if (animationData.mode === 'analytic') {
@@ -506,6 +526,8 @@ function endAnimation() {
     orbitalState = newState;
     buildOrbital(orbitalState);
     updateCurrentOrbitalLabel();
+    // La sélection a pu changer pendant l'animation
+    visualizeSymmetryElement(currentSymmetry);
 }
 
 // ============================================
@@ -659,7 +681,11 @@ function attachEvents() {
     const symmetrySelect = document.getElementById('symmetry-select');
 
     orbitalSelect.addEventListener('change', () => setOrbital(orbitalSelect.value));
-    symmetrySelect.addEventListener('change', () => { currentSymmetry = symmetrySelect.value; });
+    // L'élément de symétrie est affiché dès qu'il est sélectionné
+    symmetrySelect.addEventListener('change', () => {
+        currentSymmetry = symmetrySelect.value;
+        if (!animationData) visualizeSymmetryElement(currentSymmetry);
+    });
 
     document.querySelectorAll('.segmented-btn').forEach(btn => {
         btn.addEventListener('click', () => setRepresentation(btn.dataset.mode));
@@ -678,8 +704,12 @@ function attachEvents() {
     document.getElementById('finish-btn').addEventListener('click', finishModule);
     document.getElementById('reset-camera').addEventListener('click', () => controls.reset());
 
+    // Déplacer le curseur met la lecture en pause et permet de parcourir l'opération
     animationSlider.addEventListener('input', () => {
-        if (animationData && parseInt(animationSlider.value, 10) >= 100) endAnimation();
+        if (!animationData) return;
+        animationData.playing = false;
+        animationData.progress = parseInt(animationSlider.value, 10) / 100;
+        if (animationData.progress >= 1) endAnimation();
     });
 }
 
