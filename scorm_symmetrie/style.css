@@ -123,6 +123,53 @@ body {
     box-shadow: 0 0 0 2px rgba(74, 111, 165, 0.2);
 }
 
+/* Choix de la représentation (bouton à deux positions) */
+.group-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.segmented {
+    display: flex;
+    border: 1px solid var(--primary-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.segmented-btn {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    background: white;
+    color: var(--primary-color);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.segmented-btn + .segmented-btn {
+    border-left: 1px solid var(--primary-color);
+}
+
+.segmented-btn.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+.segmented-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.help-text {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--dark-gray);
+}
+
 /* Boutons */
 .btn {
     display: inline-block;
