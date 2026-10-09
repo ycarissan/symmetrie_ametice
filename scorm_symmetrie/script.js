@@ -459,6 +459,7 @@ function startAnimation(symmetry) {
         group: animationGroup,
         lobes: lobes,
         symmetry: symmetry,
+        initialState: initialState,
         newState: newState,
         progress: 0,
         // Lecture automatique ; le curseur permet de reprendre la main à tout moment
@@ -482,13 +483,12 @@ function updateAnimation() {
         const elapsed = (performance.now() - animationData.startTime) / ANIMATION_DURATION;
         animationData.progress = easeInOut(Math.min(elapsed, 1));
         animationSlider.value = Math.round(animationData.progress * 100);
-        if (elapsed >= 1) {
-            endAnimation();
-            return;
-        }
+        // En fin de lecture, l'opération reste ouverte : le curseur permet de la parcourir à nouveau
+        if (elapsed >= 1) animationData.playing = false;
     }
 
     const t = animationData.progress;
+    updateAnimatedOrbitalLabel(t);
     const op = OPERATIONS[animationData.symmetry];
 
     if (animationData.mode === 'analytic') {
@@ -508,6 +508,14 @@ function updateAnimation() {
     });
 }
 
+// L'orbitale affichée est l'état de départ tant que l'opération n'est pas allée à son terme
+function updateAnimatedOrbitalLabel(t) {
+    const state = t >= 1 ? animationData.newState : animationData.initialState;
+    if (animationData.labelState === state) return;
+    animationData.labelState = state;
+    document.getElementById('current-orbital').innerHTML = getOrbitalDisplayName(state);
+}
+
 // Abandonne l'animation en cours sans modifier l'état de l'orbitale
 function cancelAnimation() {
     animatedOrbitalGroup.visible = false;
@@ -517,14 +525,21 @@ function cancelAnimation() {
     animationSlider.disabled = true;
 }
 
-// Termine l'animation et adopte l'orbitale transformée comme nouvel état
+// Termine l'animation : l'orbitale transformée devient le nouvel état si l'opération
+// est allée à son terme (ou est en cours de lecture) ; si l'utilisateur a ramené
+// le curseur en arrière, l'opération est annulée et on repart de l'état de départ
 function endAnimation() {
     if (!animationData) return;
+    const completed = animationData.playing || animationData.progress >= 1;
     const newState = animationData.newState;
     cancelAnimation();
 
-    orbitalState = newState;
-    buildOrbital(orbitalState);
+    if (completed) {
+        orbitalState = newState;
+        buildOrbital(orbitalState);
+    } else {
+        showExplanation(orbitalState, 'E', orbitalState, 'Opération annulée. Sélectionnez une opération de symétrie et cliquez sur "Appliquer".');
+    }
     updateCurrentOrbitalLabel();
     // La sélection a pu changer pendant l'animation
     visualizeSymmetryElement(currentSymmetry);
@@ -623,7 +638,7 @@ function setRepresentation(mode) {
         btn.setAttribute('aria-pressed', String(active));
     });
     document.getElementById('representation-help').textContent = REPRESENTATION_HELP[mode];
-    cancelAnimation();
+    endAnimation();
     buildOrbital(orbitalState);
 }
 
@@ -684,7 +699,9 @@ function attachEvents() {
     // L'élément de symétrie est affiché dès qu'il est sélectionné
     symmetrySelect.addEventListener('change', () => {
         currentSymmetry = symmetrySelect.value;
-        if (!animationData) visualizeSymmetryElement(currentSymmetry);
+        // Une opération en pause est validée (curseur au bout) ou annulée avant de passer à la suivante
+        if (animationData && !animationData.playing) endAnimation();
+        else if (!animationData) visualizeSymmetryElement(currentSymmetry);
     });
 
     document.querySelectorAll('.segmented-btn').forEach(btn => {
@@ -709,7 +726,6 @@ function attachEvents() {
         if (!animationData) return;
         animationData.playing = false;
         animationData.progress = parseInt(animationSlider.value, 10) / 100;
-        if (animationData.progress >= 1) endAnimation();
     });
 }
 
