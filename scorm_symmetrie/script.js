@@ -1,6 +1,11 @@
 /**
  * Symétrie des Orbitales Atomiques - Module 3 : Atome Isolé
- * Prototype SCORM pour Moodle - Version finale corrigée
+ * Prototype SCORM pour Moodle
+ *
+ * L'état d'une orbitale p est représenté par le vecteur unitaire pointant vers
+ * son lobe positif : appliquer une opération de symétrie revient à transformer
+ * ce vecteur. Cela gère correctement les changements de signe (−p_x) comme les
+ * combinaisons linéaires produites par C3 (−½ p_x + √3/2 p_y).
  */
 
 // ============================================
@@ -10,17 +15,37 @@
 let scene, camera, renderer, controls;
 let orbitalGroup, symmetryElementGroup, animatedOrbitalGroup;
 
-let currentOrbital = 's';
+// { type: 's' } ou { type: 'p', dir: THREE.Vector3 }
+let orbitalState = { type: 's' };
 let currentSymmetry = 'E';
+
+// 'spheres' (diagramme polaire de |Y|) ou 'analytic' (diagramme polaire de |Y|²)
+let representation = 'spheres';
 
 // Animation
 let animationData = null;
 let animationSlider;
 
-// Paramètres de rendu
-const LOBE_RADIUS = 0.8;
-const LOBE_DISTANCE = 2.0;
-const ORBITAL_SCALE = 1.0;
+// Harmoniques sphériques réelles : Y(s) = 1/(2√π), Y(p) = √(3/4π)·cos θ
+const Y_S = 1 / (2 * Math.sqrt(Math.PI));
+const Y_P = Math.sqrt(3 / (4 * Math.PI));
+
+// Représentation « sphères » : le diagramme polaire de |Y| d'une orbitale p est
+// exactement deux sphères de diamètre Y_P tangentes au noyau
+const POLAR_SCALE = 5;
+const S_RADIUS = Y_S * POLAR_SCALE;          // ≈ 1,41
+const LOBE_RADIUS = Y_P * POLAR_SCALE / 2;   // ≈ 1,22
+const LOBE_DISTANCE = LOBE_RADIUS;           // sphères tangentes au noyau
+
+// Représentation « analytique » : r = |Y|², lobes p de longueur 3
+const DENSITY_SCALE = 3 / (Y_P * Y_P);
+
+const EPSILON = 1e-6;
+
+const REPRESENTATION_HELP = {
+    spheres: 'Diagramme polaire de |Y| : une orbitale p est exactement deux sphères tangentes au noyau.',
+    analytic: 'Diagramme polaire de |Y|² (densité angulaire) : r = |Y(θ,φ)|², couleur = signe de Y.'
+};
 
 // Couleurs
 const COLORS = {
@@ -31,405 +56,181 @@ const COLORS = {
     grid: 0xE9ECEF
 };
 
+const AXES = {
+    x: new THREE.Vector3(1, 0, 0),
+    y: new THREE.Vector3(0, 1, 0),
+    z: new THREE.Vector3(0, 0, 1)
+};
+
+// Définition géométrique des opérations de symétrie
+const OPERATIONS = {
+    E:        { kind: 'identity' },
+    sigma_xz: { kind: 'reflection', normal: AXES.y, label: 'σ(xz)', labelPos: [3.5, 0, 3.5] },
+    sigma_yz: { kind: 'reflection', normal: AXES.x, label: 'σ(yz)', labelPos: [0, 3.5, 3.5] },
+    sigma_xy: { kind: 'reflection', normal: AXES.z, label: 'σ(xy)', labelPos: [3.5, 3.5, 0] },
+    C2_x:     { kind: 'rotation', axis: AXES.x, angle: Math.PI,         label: 'C₂(x)' },
+    C2_y:     { kind: 'rotation', axis: AXES.y, angle: Math.PI,         label: 'C₂(y)' },
+    C2_z:     { kind: 'rotation', axis: AXES.z, angle: Math.PI,         label: 'C₂(z)' },
+    C3_z:     { kind: 'rotation', axis: AXES.z, angle: 2 * Math.PI / 3, label: 'C₃(z)' },
+    C4_z:     { kind: 'rotation', axis: AXES.z, angle: Math.PI / 2,     label: 'C₄(z)' },
+    i:        { kind: 'inversion', label: 'i' }
+};
+
 // ============================================
 // INITIALISATION
 // ============================================
 
 function initThreeJS() {
+    const canvas = document.getElementById('three-canvas');
+
     scene = new THREE.Scene();
     scene.background = new THREE.Color(COLORS.background);
-    
-    camera = new THREE.PerspectiveCamera(75, 
-        document.getElementById('three-canvas').clientWidth / 
-        document.getElementById('three-canvas').clientHeight, 
-        0.1, 1000);
+
+    camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
     camera.position.set(5, 5, 5);
     camera.lookAt(0, 0, 0);
-    
-    renderer = new THREE.WebGLRenderer({
-        canvas: document.getElementById('three-canvas'),
-        antialias: true
-    });
-    renderer.setSize(
-        document.getElementById('three-canvas').clientWidth,
-        document.getElementById('three-canvas').clientHeight
-    );
+
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
-    
+
     // Lumière
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-    
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
     const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight1.position.set(5, 5, 5);
     scene.add(directionalLight1);
-    
+
     const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
     directionalLight2.position.set(-5, -5, -5);
     scene.add(directionalLight2);
-    
-    // Grille et axes
-    const gridHelper = new THREE.GridHelper(10, 10, COLORS.grid, COLORS.grid);
-    scene.add(gridHelper);
-    const axesHelper = new THREE.AxesHelper(5);
-    scene.add(axesHelper);
-    
+
+    // Grille et axes (x rouge, y vert, z bleu)
+    scene.add(new THREE.GridHelper(10, 10, COLORS.grid, COLORS.grid));
+    scene.add(new THREE.AxesHelper(5));
+
     // Groupes
     orbitalGroup = new THREE.Group();
     scene.add(orbitalGroup);
-    
+
     animatedOrbitalGroup = new THREE.Group();
-    scene.add(animatedOrbitalGroup);
     animatedOrbitalGroup.visible = false;
-    
+    scene.add(animatedOrbitalGroup);
+
     symmetryElementGroup = new THREE.Group();
     scene.add(symmetryElementGroup);
-    
+
     controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.minDistance = 3;
     controls.maxDistance = 20;
-    
+
+    onWindowResize();
     window.addEventListener('resize', onWindowResize);
+    if (window.ResizeObserver) {
+        new ResizeObserver(onWindowResize).observe(canvas.parentElement);
+    }
     animate();
 }
 
 function onWindowResize() {
-    const canvas = document.getElementById('three-canvas');
-    camera.aspect = canvas.clientWidth / canvas.clientHeight;
+    const canvas = renderer.domElement;
+    const width = canvas.clientWidth, height = canvas.clientHeight;
+    if (!width || !height) return;
+    camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    // false : ne pas imposer de taille CSS, le canvas suit son conteneur
+    renderer.setSize(width, height, false);
 }
 
 function animate() {
     requestAnimationFrame(animate);
-    
-    if (animationData) {
-        updateAnimation();
-    }
-    
+    if (animationData) updateAnimation();
     controls.update();
     renderer.render(scene, camera);
-}
-
-// ============================================
-// ANIMATION - CORRIGÉE
-// ============================================
-
-function updateAnimation() {
-    const slider = animationSlider;
-    let progress = parseInt(slider.value) / 100;
-    
-    const group = animationData.group;
-    const originalPositions = animationData.originalPositions;
-    const targetPositions = animationData.targetPositions;
-    const originalColors = animationData.originalColors;
-    const targetColors = animationData.targetColors;
-    
-    for (let i = 0; i < group.children.length; i++) {
-        const child = group.children[i];
-        if (child.type === 'Mesh' && originalPositions[i]) {
-            child.position.x = originalPositions[i].x + (targetPositions[i].x - originalPositions[i].x) * progress;
-            child.position.y = originalPositions[i].y + (targetPositions[i].y - originalPositions[i].y) * progress;
-            child.position.z = originalPositions[i].z + (targetPositions[i].z - originalPositions[i].z) * progress;
-            
-            if (originalColors[i] && targetColors[i]) {
-                const startColor = new THREE.Color(originalColors[i]);
-                const endColor = new THREE.Color(targetColors[i]);
-                const currentColor = startColor.clone().lerp(endColor, progress);
-                child.material.color.copy(currentColor);
-            }
-        }
-    }
-}
-
-function startAnimation(symmetry) {
-    clearSymmetryGroup();
-    visualizeSymmetryElement(symmetry);
-    
-    const initialOrbital = currentOrbital;
-    let newOrbital = currentOrbital;
-    let signChange = false;
-    let explanation = '';
-    
-    // Calculer le résultat
-    switch (currentOrbital) {
-        case 's':
-            newOrbital = 's';
-            explanation = 'L\'orbitale <strong>s</strong> est <strong>totalement symétrique</strong> : elle reste inchangée.';
-            break;
-        case 'p_x':
-            newOrbital = transformPOrbital('p_x', symmetry);
-            signChange = newOrbital.startsWith('-');
-            explanation = getPOrbitalExplanation('p_x', symmetry, signChange);
-            break;
-        case 'p_y':
-            newOrbital = transformPOrbital('p_y', symmetry);
-            signChange = newOrbital.startsWith('-');
-            explanation = getPOrbitalExplanation('p_y', symmetry, signChange);
-            break;
-        case 'p_z':
-            newOrbital = transformPOrbital('p_z', symmetry);
-            signChange = newOrbital.startsWith('-');
-            explanation = getPOrbitalExplanation('p_z', symmetry, signChange);
-            break;
-    }
-    
-    // RENDRE L'ORBITALE PRINCIPALE SEMI-TRANSPARENTE (au lieu de la masquer)
-    setGroupOpacity(orbitalGroup, 0.3);
-    
-    // Cloner l'orbitale actuelle pour l'animation
-    clearGroup(animatedOrbitalGroup);
-    const animationGroup = cloneGroup(orbitalGroup);
-    
-    // Rendre l'animation opaque
-    setGroupOpacity(animationGroup, 1.0);
-    
-    animatedOrbitalGroup.add(animationGroup);
-    animatedOrbitalGroup.visible = true;
-    
-    // Préparer les données d'animation
-    const originalPositions = [];
-    const targetPositions = [];
-    const originalColors = [];
-    const targetColors = [];
-    
-    // Récupérer les positions des lobes DE L'ORBITALE ANIMÉE
-    animationGroup.children.forEach(child => {
-        if (child.type === 'Mesh' && child.geometry && child.geometry.type === 'SphereGeometry') {
-            originalPositions.push(child.position.clone());
-            targetPositions.push(transformPoint(child.position, symmetry));
-            originalColors.push(child.material.color.getHex());
-            
-            if (signChange) {
-                const currentColor = child.material.color.getHex();
-                targetColors.push(currentColor === COLORS.positive ? COLORS.negative : COLORS.positive);
-            } else {
-                targetColors.push(child.material.color.getHex());
-            }
-        } else {
-            originalPositions.push(null);
-            targetPositions.push(null);
-            originalColors.push(null);
-            targetColors.push(null);
-        }
-    });
-    
-    animationData = {
-        group: animationGroup,
-        originalPositions: originalPositions,
-        targetPositions: targetPositions,
-        originalColors: originalColors,
-        targetColors: targetColors,
-        newOrbital: newOrbital,
-        signChange: signChange,
-        initialOrbital: initialOrbital,
-        symmetry: symmetry
-    };
-    
-    // Activer et initialiser le slider
-    slider.disabled = false;
-    slider.value = 0;
-    
-    showExplanation(initialOrbital, symmetry, newOrbital, explanation);
-    updateSCORMStatus();
-}
-
-function endAnimation() {
-    if (!animationData) return;
-    
-    animatedOrbitalGroup.visible = false;
-    clearGroup(animatedOrbitalGroup);
-    
-    // Rétablir l'opacité de l'orbitale principale
-    setGroupOpacity(orbitalGroup, 1.0);
-    
-    // Mettre à jour l'orbitale principale avec l'état final
-    const newOrbital = animationData.newOrbital;
-    const signChange = animationData.signChange;
-    
-    // Mettre à jour currentOrbital
-    currentOrbital = newOrbital;
-    document.getElementById('current-orbital').innerHTML = getOrbitalDisplayName(newOrbital);
-    document.getElementById('orbital-select').value = newOrbital;
-    
-    // Appliquer les changements
-    if (newOrbital !== animationData.initialOrbital && !newOrbital.startsWith('-')) {
-        setOrbital(newOrbital);
-    } else if (signChange) {
-        invertOrbitalColors();
-    }
-    
-    // Désactiver le slider
-    animationSlider.disabled = true;
-    animationData = null;
-}
-
-function setGroupOpacity(group, opacity) {
-    group.traverse(child => {
-        if (child.material) {
-            if (child.material instanceof Array) {
-                child.material.forEach(mat => {
-                    mat.transparent = true;
-                    mat.opacity = opacity;
-                });
-            } else {
-                child.material.transparent = true;
-                child.material.opacity = opacity;
-            }
-        }
-    });
-}
-
-// ============================================
-// CRÉATION DES ORBITALES
-// ============================================
-
-function createSOrbital() {
-    clearGroup(orbitalGroup);
-    
-    const geometry = new THREE.SphereGeometry(LOBE_RADIUS * ORBITAL_SCALE, 32, 32);
-    const material = new THREE.MeshPhongMaterial({
-        color: COLORS.positive,
-        transparent: true,
-        opacity: 1.0,
-        side: THREE.DoubleSide
-    });
-    
-    const sphere = new THREE.Mesh(geometry, material);
-    orbitalGroup.add(sphere);
-    
-    const edges = new THREE.EdgesGeometry(geometry);
-    const line = new THREE.LineSegments(
-        edges, 
-        new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1, transparent: true, opacity: 0.5 })
-    );
-    orbitalGroup.add(line);
-}
-
-function createLobe(color) {
-    const geometry = new THREE.SphereGeometry(LOBE_RADIUS * ORBITAL_SCALE, 32, 32);
-    const material = new THREE.MeshPhongMaterial({
-        color: color,
-        transparent: true,
-        opacity: 1.0,
-        side: THREE.DoubleSide
-    });
-    
-    const lobe = new THREE.Mesh(geometry, material);
-    
-    const edges = new THREE.EdgesGeometry(geometry);
-    const line = new THREE.LineSegments(
-        edges, 
-        new THREE.LineBasicMaterial({ 
-            color: 0x000000, 
-            linewidth: 1,
-            transparent: true,
-            opacity: 0.5
-        })
-    );
-    lobe.add(line);
-    
-    return lobe;
-}
-
-function createPOrbital(axis) {
-    clearGroup(orbitalGroup);
-    
-    let posPositions, negPositions;
-    if (axis === 'x') {
-        posPositions = { x: LOBE_DISTANCE * ORBITAL_SCALE, y: 0, z: 0 };
-        negPositions = { x: -LOBE_DISTANCE * ORBITAL_SCALE, y: 0, z: 0 };
-    } else if (axis === 'y') {
-        posPositions = { x: 0, y: LOBE_DISTANCE * ORBITAL_SCALE, z: 0 };
-        negPositions = { x: 0, y: -LOBE_DISTANCE * ORBITAL_SCALE, z: 0 };
-    } else if (axis === 'z') {
-        posPositions = { x: 0, y: 0, z: LOBE_DISTANCE * ORBITAL_SCALE };
-        negPositions = { x: 0, y: 0, z: -LOBE_DISTANCE * ORBITAL_SCALE };
-    }
-    
-    const lobePositive = createLobe(COLORS.positive);
-    lobePositive.position.set(posPositions.x, posPositions.y, posPositions.z);
-    
-    const lobeNegative = createLobe(COLORS.negative);
-    lobeNegative.position.set(negPositions.x, negPositions.y, negPositions.z);
-    
-    orbitalGroup.add(lobePositive);
-    orbitalGroup.add(lobeNegative);
-}
-
-function clearGroup(group) {
-    while (group.children.length > 0) {
-        const child = group.children[0];
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-            if (child.material instanceof Array) {
-                child.material.forEach(m => m.dispose());
-            } else {
-                child.material.dispose();
-            }
-        }
-        group.remove(child);
-    }
-}
-
-function clearSymmetryGroup() {
-    while (symmetryElementGroup.children.length > 0) {
-        const child = symmetryElementGroup.children[0];
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
-        symmetryElementGroup.remove(child);
-    }
 }
 
 // ============================================
 // TRANSFORMATIONS
 // ============================================
 
-function transformPoint(point, symmetry) {
-    const x = point.x, y = point.y, z = point.z;
-    
-    switch (symmetry) {
-        case 'E': return new THREE.Vector3(x, y, z);
-        case 'sigma_xz': return new THREE.Vector3(x, -y, z);
-        case 'sigma_yz': return new THREE.Vector3(-x, y, z);
-        case 'sigma_xy': return new THREE.Vector3(x, y, -z);
-        case 'C2_x': return new THREE.Vector3(x, -y, -z);
-        case 'C2_y': return new THREE.Vector3(-x, y, -z);
-        case 'C2_z': return new THREE.Vector3(-x, -y, z);
-        case 'C3_z': {
-            const c = Math.cos(2 * Math.PI / 3), s = Math.sin(2 * Math.PI / 3);
-            return new THREE.Vector3(x * c - y * s, x * s + y * c, z);
+/**
+ * Matrice de l'opération `symmetry` avec une progression t ∈ [0, 1]
+ * (t = 1 : opération complète). Les rotations suivent un arc de cercle ;
+ * pour les réflexions et l'inversion, la composante concernée passe
+ * linéairement de +1 à −1 (trajectoire rectiligne).
+ */
+function operationMatrix(symmetry, t = 1) {
+    const op = OPERATIONS[symmetry] || OPERATIONS.E;
+    const m = new THREE.Matrix4();
+
+    switch (op.kind) {
+        case 'rotation':
+            return m.makeRotationAxis(op.axis, op.angle * t);
+        case 'reflection': {
+            // I − 2t·n·nᵀ
+            const n = op.normal, k = -2 * t;
+            return m.set(
+                1 + k * n.x * n.x, k * n.x * n.y,     k * n.x * n.z,     0,
+                k * n.y * n.x,     1 + k * n.y * n.y, k * n.y * n.z,     0,
+                k * n.z * n.x,     k * n.z * n.y,     1 + k * n.z * n.z, 0,
+                0,                 0,                 0,                 1
+            );
         }
-        case 'C4_z': return new THREE.Vector3(-y, x, z);
-        case 'i': return new THREE.Vector3(-x, -y, -z);
-        default: return new THREE.Vector3(x, y, z);
+        case 'inversion': {
+            const scale = 1 - 2 * t;
+            return m.makeScale(scale, scale, scale);
+        }
+        default:
+            return m;
     }
 }
 
-function transformPOrbital(orbital, symmetry) {
-    const axis = orbital.split('_')[1];
-    switch (symmetry) {
-        case 'E': return orbital;
-        case 'sigma_xz': return (axis === 'y') ? '-' + orbital : orbital;
-        case 'sigma_yz': return (axis === 'x') ? '-' + orbital : orbital;
-        case 'sigma_xy': return (axis === 'z') ? '-' + orbital : orbital;
-        case 'C2_x': return (axis === 'y' || axis === 'z') ? '-' + orbital : orbital;
-        case 'C2_y': return (axis === 'x' || axis === 'z') ? '-' + orbital : orbital;
-        case 'C2_z': return (axis === 'x' || axis === 'y') ? '-' + orbital : orbital;
-        case 'C3_z': return (axis === 'x') ? 'p_y' : (axis === 'y') ? '-p_x' : orbital;
-        case 'C4_z': return (axis === 'x') ? 'p_y' : (axis === 'y') ? '-p_x' : orbital;
-        case 'i': return '-' + orbital;
-        default: return orbital;
-    }
+function transformPoint(point, symmetry, t = 1) {
+    return new THREE.Vector3(point.x, point.y, point.z).applyMatrix4(operationMatrix(symmetry, t));
 }
 
-function getPOrbitalExplanation(orbital, symmetry, signChange) {
-    const symmetryName = getSymmetryName(symmetry);
-    return signChange 
-        ? `L'orbitale <strong>${orbital}</strong> est <strong>antisymétrique</strong> par rapport à ${symmetryName} : elle change de signe.`
-        : `L'orbitale <strong>${orbital}</strong> est <strong>symétrique</strong> par rapport à ${symmetryName} : elle reste inchangée.`;
+function cleanVector(v) {
+    ['x', 'y', 'z'].forEach(c => {
+        if (Math.abs(v[c]) < EPSILON) v[c] = 0;
+        else if (Math.abs(Math.abs(v[c]) - 1) < EPSILON) v[c] = Math.sign(v[c]);
+    });
+    return v;
+}
+
+function transformState(state, symmetry) {
+    if (state.type === 's') return { type: 's' };
+    return { type: 'p', dir: cleanVector(transformPoint(state.dir, symmetry)) };
+}
+
+// ============================================
+// NOMS ET EXPLICATIONS
+// ============================================
+
+const NICE_COEFFICIENTS = [
+    [0.5, '½'],
+    [Math.sqrt(3) / 2, '√3/2'],
+    [Math.SQRT1_2, '1/√2']
+];
+
+function formatCoefficient(abs) {
+    const nice = NICE_COEFFICIENTS.find(([value]) => Math.abs(abs - value) < 1e-4);
+    return nice ? nice[1] : abs.toFixed(2);
+}
+
+function getOrbitalDisplayName(state) {
+    if (state.type === 's') return 's';
+
+    let html = '';
+    ['x', 'y', 'z'].forEach(c => {
+        const coef = state.dir[c];
+        if (Math.abs(coef) < EPSILON) return;
+        const abs = Math.abs(coef);
+        const sign = coef < 0 ? '−' : (html ? '+' : '');
+        const factor = Math.abs(abs - 1) < EPSILON ? '' : formatCoefficient(abs) + ' ';
+        html += `${html ? ' ' : ''}${sign}${html && sign ? ' ' : ''}${factor}p<sub>${c}</sub>`;
+    });
+    return html;
 }
 
 function getSymmetryName(symmetry) {
@@ -443,13 +244,268 @@ function getSymmetryName(symmetry) {
     return names[symmetry] || symmetry;
 }
 
-function invertOrbitalColors() {
-    orbitalGroup.children.forEach(child => {
-        if (child.type === 'Mesh' && child.geometry?.type === 'SphereGeometry') {
-            const color = child.material.color.getHex();
-            child.material.color.setHex(color === COLORS.positive ? COLORS.negative : COLORS.positive);
+// Contracte « de le » → « du » et « à le » → « au »
+function withPreposition(preposition, name) {
+    if (name.startsWith('le ')) return (preposition === 'de' ? 'du ' : 'au ') + name.slice(3);
+    return preposition + ' ' + name;
+}
+
+function getExplanation(initialState, newState, symmetry) {
+    const relativeTo = 'par rapport ' + withPreposition('à', getSymmetryName(symmetry));
+    const name = getOrbitalDisplayName(initialState);
+
+    if (initialState.type === 's') {
+        return `L'orbitale <strong>s</strong> est <strong>totalement symétrique</strong> : elle reste inchangée.`;
+    }
+
+    const overlap = initialState.dir.dot(newState.dir);
+    if (overlap > 1 - EPSILON) {
+        return `L'orbitale <strong>${name}</strong> est <strong>symétrique</strong> ${relativeTo} : elle reste inchangée (caractère +1).`;
+    }
+    if (overlap < -1 + EPSILON) {
+        return `L'orbitale <strong>${name}</strong> est <strong>antisymétrique</strong> ${relativeTo} : elle change de signe (caractère −1).`;
+    }
+    return `L'orbitale <strong>${name}</strong> n'est ni symétrique ni antisymétrique ${relativeTo} : `
+        + `elle est transformée en une autre orbitale (sa composante sur elle-même vaut ${overlap.toFixed(2)}).`;
+}
+
+function showExplanation(initialState, symmetry, newState, explanation) {
+    const before = getOrbitalDisplayName(initialState);
+    const after = getOrbitalDisplayName(newState);
+    const html = `
+        <h4>Résultat ${withPreposition('de', getSymmetryName(symmetry))} sur ${before}</h4>
+        <p>${explanation}</p>
+        ${after !== before
+            ? `<p><strong>Transformation : </strong>${before} → ${after}</p>`
+            : '<p><strong>L\'orbitale reste inchangée.</strong></p>'}
+    `;
+    const div = document.getElementById('explanation');
+    div.innerHTML = html;
+    div.classList.add('fade-in');
+    setTimeout(() => div.classList.remove('fade-in'), 500);
+}
+
+function updateCurrentOrbitalLabel() {
+    document.getElementById('current-orbital').innerHTML = getOrbitalDisplayName(orbitalState);
+}
+
+// ============================================
+// CRÉATION DES ORBITALES
+// ============================================
+
+function createLobe(color, radius) {
+    const geometry = new THREE.SphereGeometry(radius, 32, 32);
+    const material = new THREE.MeshPhongMaterial({
+        color: color,
+        transparent: true,
+        opacity: 1.0,
+        side: THREE.DoubleSide
+    });
+    material.userData.baseOpacity = 1.0;
+    const lobe = new THREE.Mesh(geometry, material);
+    lobe.userData.isLobe = true;
+
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 });
+    lineMaterial.userData.baseOpacity = 0.5;
+    lobe.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry), lineMaterial));
+
+    return lobe;
+}
+
+/**
+ * Diagramme polaire de |Y|² : chaque sommet d'une sphère unité est placé à la
+ * distance r = |Y(θ,φ)|² dans sa direction, et coloré selon le signe de Y.
+ * L'orbitale p est construite le long de +z puis orientée selon state.dir.
+ */
+function createAnalyticOrbital(state) {
+    const geometry = new THREE.SphereGeometry(1, 96, 64);
+    const position = geometry.attributes.position;
+    const colors = new Float32Array(position.count * 3);
+    const positive = new THREE.Color(COLORS.positive);
+    const negative = new THREE.Color(COLORS.negative);
+    const u = new THREE.Vector3();
+
+    for (let k = 0; k < position.count; k++) {
+        u.fromBufferAttribute(position, k).normalize();
+        const y = state.type === 's' ? Y_S : Y_P * u.z;
+        (y >= 0 ? positive : negative).toArray(colors, 3 * k);
+        u.multiplyScalar(DENSITY_SCALE * y * y);
+        position.setXYZ(k, u.x, u.y, u.z);
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshPhongMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 1.0,
+        side: THREE.DoubleSide
+    });
+    material.userData.baseOpacity = 1.0;
+
+    const mesh = new THREE.Mesh(geometry, material);
+    if (state.type === 'p') mesh.quaternion.setFromUnitVectors(AXES.z, state.dir);
+    return mesh;
+}
+
+function buildOrbital(state) {
+    clearGroup(orbitalGroup);
+
+    if (representation === 'analytic') {
+        orbitalGroup.add(createAnalyticOrbital(state));
+        return;
+    }
+
+    if (state.type === 's') {
+        orbitalGroup.add(createLobe(COLORS.positive, S_RADIUS));
+        return;
+    }
+
+    const lobePositive = createLobe(COLORS.positive, LOBE_RADIUS);
+    lobePositive.position.copy(state.dir).multiplyScalar(LOBE_DISTANCE);
+
+    const lobeNegative = createLobe(COLORS.negative, LOBE_RADIUS);
+    lobeNegative.position.copy(state.dir).multiplyScalar(-LOBE_DISTANCE);
+
+    orbitalGroup.add(lobePositive);
+    orbitalGroup.add(lobeNegative);
+}
+
+function disposeObject(object) {
+    object.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach(m => {
+                if (m.map) m.map.dispose();
+                m.dispose();
+            });
         }
     });
+}
+
+function clearGroup(group) {
+    while (group.children.length > 0) {
+        const child = group.children[0];
+        disposeObject(child);
+        group.remove(child);
+    }
+}
+
+function clearSymmetryGroup() {
+    clearGroup(symmetryElementGroup);
+}
+
+// Copie profonde : géométries et matériaux ne sont pas partagés avec l'original
+function cloneGroup(group) {
+    const cloned = group.clone(true);
+    cloned.traverse(child => {
+        if (child.geometry) child.geometry = child.geometry.clone();
+        if (child.material) {
+            const material = child.material.clone();
+            material.userData = Object.assign({}, child.material.userData);
+            child.material = material;
+        }
+    });
+    return cloned;
+}
+
+// L'opacité est relative à l'opacité de base de chaque matériau
+function setGroupOpacity(group, factor) {
+    group.traverse(child => {
+        if (!child.material) return;
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach(mat => {
+            const base = mat.userData.baseOpacity !== undefined ? mat.userData.baseOpacity : 1.0;
+            mat.transparent = true;
+            mat.opacity = base * factor;
+        });
+    });
+}
+
+// ============================================
+// ANIMATION
+// ============================================
+
+function startAnimation(symmetry) {
+    cancelAnimation();
+    visualizeSymmetryElement(symmetry);
+
+    const initialState = orbitalState;
+    const newState = transformState(initialState, symmetry);
+    const explanation = getExplanation(initialState, newState, symmetry);
+
+    // Orbitale de départ semi-transparente en arrière-plan
+    setGroupOpacity(orbitalGroup, 0.3);
+
+    // Copie opaque qui va subir l'opération
+    const animationGroup = cloneGroup(orbitalGroup);
+    setGroupOpacity(animationGroup, 1.0);
+    animatedOrbitalGroup.add(animationGroup);
+    animatedOrbitalGroup.visible = true;
+
+    // Les lobes emportent leur couleur (phase) avec eux : pas d'inversion de couleur
+    const lobes = animationGroup.children
+        .filter(child => child.userData.isLobe)
+        .map(mesh => ({ mesh: mesh, start: mesh.position.clone() }));
+
+    // En mode analytique, c'est l'orbitale entière qui subit la transformation
+    animationGroup.matrixAutoUpdate = false;
+
+    animationData = {
+        mode: representation,
+        group: animationGroup,
+        lobes: lobes,
+        symmetry: symmetry,
+        newState: newState
+    };
+
+    animationSlider.disabled = false;
+    animationSlider.value = 0;
+
+    showExplanation(initialState, symmetry, newState, explanation);
+    updateSCORMStatus();
+}
+
+function updateAnimation() {
+    const t = parseInt(animationSlider.value, 10) / 100;
+    const op = OPERATIONS[animationData.symmetry];
+
+    if (animationData.mode === 'analytic') {
+        // Évite la matrice singulière (orbitale aplatie) à mi-parcours
+        const safeT = op.kind !== 'rotation' && Math.abs(t - 0.5) < 0.01 ? (t < 0.5 ? 0.49 : 0.51) : t;
+        animationData.group.matrix.copy(operationMatrix(animationData.symmetry, safeT));
+        animationData.group.matrixWorldNeedsUpdate = true;
+        return;
+    }
+
+    animationData.lobes.forEach(({ mesh, start }) => {
+        mesh.position.copy(transformPoint(start, animationData.symmetry, t));
+        // Fait aussi tourner le maillage pour que la rotation soit visible (orbitale s)
+        if (op.kind === 'rotation') {
+            mesh.quaternion.setFromAxisAngle(op.axis, op.angle * t);
+        }
+    });
+}
+
+// Abandonne l'animation en cours sans modifier l'état de l'orbitale
+function cancelAnimation() {
+    animatedOrbitalGroup.visible = false;
+    clearGroup(animatedOrbitalGroup);
+    setGroupOpacity(orbitalGroup, 1.0);
+    animationData = null;
+    animationSlider.disabled = true;
+}
+
+// Termine l'animation et adopte l'orbitale transformée comme nouvel état
+function endAnimation() {
+    if (!animationData) return;
+    const newState = animationData.newState;
+    cancelAnimation();
+
+    orbitalState = newState;
+    buildOrbital(orbitalState);
+    updateCurrentOrbitalLabel();
 }
 
 // ============================================
@@ -458,87 +514,73 @@ function invertOrbitalColors() {
 
 function visualizeSymmetryElement(symmetry) {
     clearSymmetryGroup();
-    const color = COLORS.neutral, opacity = 0.3;
-    
-    switch (symmetry) {
-        case 'E': break;
-        case 'sigma_xz': addPlane(0, Math.PI/2, 'σ<sub>xz</sub>'); break;
-        case 'sigma_yz': addPlane(0, 0, 'σ<sub>yz</sub>'); break;
-        case 'sigma_xy': addPlane(Math.PI/2, 0, 'σ<sub>xy</sub>'); break;
-        case 'C2_x': case 'C3_x': case 'C4_x': addAxis(0, 0, getSymmetryName(symmetry)); break;
-        case 'C2_y': case 'C3_y': case 'C4_y': addAxis(Math.PI/2, 0, getSymmetryName(symmetry)); break;
-        case 'C2_z': case 'C3_z': case 'C4_z': addAxis(0, 0, getSymmetryName(symmetry)); break;
-        case 'i': addInversionCenter(); break;
+    const op = OPERATIONS[symmetry];
+    if (!op) return;
+
+    switch (op.kind) {
+        case 'reflection': addPlane(op); break;
+        case 'rotation': addAxis(op); break;
+        case 'inversion': addInversionCenter(op); break;
     }
 }
 
-function addPlane(xRot, yRot, label) {
+function addPlane(op) {
+    // PlaneGeometry est dans le plan xy (normale +z) : on l'oriente vers la normale
     const plane = new THREE.Mesh(
-        new THREE.PlaneGeometry(20, 20),
-        new THREE.MeshBasicMaterial({ color: COLORS.neutral, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+        new THREE.PlaneGeometry(10, 10),
+        new THREE.MeshBasicMaterial({
+            color: COLORS.neutral, transparent: true, opacity: 0.3,
+            side: THREE.DoubleSide, depthWrite: false
+        })
     );
-    plane.rotation.x = xRot;
-    plane.rotation.y = yRot;
+    plane.lookAt(op.normal);
     symmetryElementGroup.add(plane);
-    addSymmetryLabel(plane, label);
+    addSymmetryLabel(op.label, new THREE.Vector3(...op.labelPos));
 }
 
-function addAxis(xRot, yRot, label) {
-    const axis = createRotationAxis(10);
-    axis.rotation.x = xRot;
-    axis.rotation.y = yRot;
+function addAxis(op) {
+    const length = 10;
+    const material = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 });
+
+    // CylinderGeometry est orientée selon y : on l'aligne sur l'axe de rotation
+    const axis = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, length, 32), material);
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.5, 32), material.clone());
+    arrow.position.y = length / 2;
+    axis.add(arrow);
+    axis.quaternion.setFromUnitVectors(AXES.y, op.axis);
     symmetryElementGroup.add(axis);
-    addSymmetryLabel(axis, label);
+
+    addSymmetryLabel(op.label, op.axis.clone().multiplyScalar(length / 2 + 0.8));
 }
 
-function addInversionCenter() {
+function addInversionCenter(op) {
     const center = new THREE.Mesh(
         new THREE.SphereGeometry(0.2, 16, 16),
         new THREE.MeshBasicMaterial({ color: 0x000000 })
     );
     symmetryElementGroup.add(center);
-    addSymmetryLabel(center, 'i');
+    addSymmetryLabel(op.label, new THREE.Vector3(0.6, 0.6, 0.6));
 }
 
-function createRotationAxis(length) {
-    const axis = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.05, length, 32),
-        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 })
-    );
-    const arrow = new THREE.Mesh(
-        new THREE.ConeGeometry(0.15, 0.5, 32),
-        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 })
-    );
-    arrow.position.y = length / 2;
-    arrow.rotation.x = Math.PI;
-    axis.add(arrow);
-    return axis;
-}
-
-function addSymmetryLabel(object, text) {
+// Le texte est dessiné dans un canvas : il doit être en texte brut (pas de HTML)
+function addSymmetryLabel(text, position) {
     const canvas = document.createElement('canvas');
-    canvas.width = 128; canvas.height = 64;
+    canvas.width = 256; canvas.height = 128;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.font = 'Bold 14px Arial';
+    ctx.font = 'bold 56px Arial';
     ctx.fillStyle = 'white';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, canvas.width/2, canvas.height/2);
-    
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(canvas),
+        depthTest: false
+    }));
     sprite.scale.set(1, 0.5, 1);
-    
-    const center = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
-    sprite.position.copy(center);
-    
-    if (object.geometry?.type === 'PlaneGeometry') {
-        sprite.position.y = object.rotation.x === Math.PI/2 ? 1 : -1;
-    } else if (object.geometry?.type === 'CylinderGeometry') {
-        sprite.position.y = -0.5;
-    }
-    
+    sprite.position.copy(position);
     symmetryElementGroup.add(sprite);
 }
 
@@ -546,39 +588,30 @@ function addSymmetryLabel(object, text) {
 // INTERFACE
 // ============================================
 
-function setOrbital(orbital) {
-    currentOrbital = orbital;
-    document.getElementById('current-orbital').innerHTML = getOrbitalDisplayName(orbital);
-    document.getElementById('orbital-select').value = orbital;
-    
-    animatedOrbitalGroup.visible = false;
-    clearGroup(animatedOrbitalGroup);
-    setGroupOpacity(orbitalGroup, 1.0);
-    
-    if (orbital === 's') createSOrbital();
-    else createPOrbital(orbital.split('_')[1]);
-    
-    showExplanation(orbital, 'E', orbital, 'Sélectionnez une opération de symétrie et cliquez sur "Appliquer".');
+function stateFromName(name) {
+    if (name === 's') return { type: 's' };
+    return { type: 'p', dir: AXES[name.split('_')[1]].clone() };
 }
 
-function getOrbitalDisplayName(orbital) {
-    return { 's': 's', 'p_x': 'p<sub>x</sub>', 'p_y': 'p<sub>y</sub>', 'p_z': 'p<sub>z</sub>' }[orbital] || orbital;
+function setRepresentation(mode) {
+    representation = mode;
+    document.querySelectorAll('.segmented-btn').forEach(btn => {
+        const active = btn.dataset.mode === mode;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', String(active));
+    });
+    document.getElementById('representation-help').textContent = REPRESENTATION_HELP[mode];
+    cancelAnimation();
+    buildOrbital(orbitalState);
 }
 
-function showExplanation(initialOrbital, symmetry, newOrbital, explanation) {
-    const html = `
-        <h4>Résultat de ${getSymmetryName(symmetry)} sur ${getOrbitalDisplayName(initialOrbital)}</h4>
-        <p>${explanation}</p>
-        ${newOrbital.startsWith('-') ? 
-            `<p><strong>Transformation : </strong>${getOrbitalDisplayName(initialOrbital)} → -${getOrbitalDisplayName(newOrbital.substring(1))}</p>` :
-            newOrbital !== initialOrbital ? 
-            `<p><strong>Transformation : </strong>${getOrbitalDisplayName(initialOrbital)} → ${getOrbitalDisplayName(newOrbital)}</p>` :
-            '<p><strong>L\'orbitale reste inchangée.</strong></p>'}
-    `;
-    const div = document.getElementById('explanation');
-    div.innerHTML = html;
-    div.classList.add('fade-in');
-    setTimeout(() => div.classList.remove('fade-in'), 500);
+function setOrbital(name) {
+    cancelAnimation();
+    orbitalState = stateFromName(name);
+    document.getElementById('orbital-select').value = name;
+    buildOrbital(orbitalState);
+    updateCurrentOrbitalLabel();
+    showExplanation(orbitalState, 'E', orbitalState, 'Sélectionnez une opération de symétrie et cliquez sur "Appliquer".');
 }
 
 // ============================================
@@ -588,92 +621,66 @@ function showExplanation(initialOrbital, symmetry, newOrbital, explanation) {
 function initSCORM() {
     const statusText = document.getElementById('scorm-status-text');
     if (SCORM.api) {
-        statusText.textContent = SCORM.getStudentName() ? `Connecté : ${SCORM.getStudentName()}` : 'Connecté au LMS';
-        SCORM.setStatus(SCORM.status.INCOMPLETE);
-        startSessionTimer();
+        const studentName = SCORM.getStudentName();
+        statusText.textContent = studentName ? `Connecté : ${studentName}` : 'Connecté au LMS';
+        // Ne pas rétrograder un module déjà terminé lors d'une nouvelle tentative
+        const status = SCORM.getValue('cmi.core.lesson_status');
+        if (status !== SCORM.status.COMPLETED && status !== SCORM.status.PASSED) {
+            SCORM.setStatus(SCORM.status.INCOMPLETE);
+        }
     } else {
         statusText.textContent = 'Mode hors LMS';
     }
 }
 
 function updateSCORMStatus() {
-    if (SCORM.api) {
-        SCORM.setStatus(SCORM.status.COMPLETED);
-        SCORM.commit();
-    }
+    if (SCORM.api) SCORM.setStatus(SCORM.status.COMPLETED);
 }
 
 function finishModule() {
-    if (SCORM.api) {
-        SCORM.setSessionTime(getSessionTime());
+    if (SCORM.api && !SCORM.terminated) {
         SCORM.setStatus(SCORM.status.COMPLETED);
-        SCORM.setScore(1.0);
+        SCORM.setScore(100);
         SCORM.finish();
         alert('Module terminé ! Vos résultats ont été sauvegardés.');
+    } else if (SCORM.api) {
+        alert('Module déjà terminé.');
     } else {
         alert('Module terminé ! (Mode hors LMS)');
     }
 }
-
-let startTime = null;
-function startSessionTimer() { startTime = new Date(); }
-function getSessionTime() { return startTime ? (new Date() - startTime) / 1000 : 0; }
 
 // ============================================
 // ÉVÉNEMENTS
 // ============================================
 
 function attachEvents() {
-    document.getElementById('orbital-select').addEventListener('change', () => setOrbital(this.value));
-    document.getElementById('symmetry-select').addEventListener('change', () => currentSymmetry = this.value);
-    
+    const orbitalSelect = document.getElementById('orbital-select');
+    const symmetrySelect = document.getElementById('symmetry-select');
+
+    orbitalSelect.addEventListener('change', () => setOrbital(orbitalSelect.value));
+    symmetrySelect.addEventListener('change', () => { currentSymmetry = symmetrySelect.value; });
+
+    document.querySelectorAll('.segmented-btn').forEach(btn => {
+        btn.addEventListener('click', () => setRepresentation(btn.dataset.mode));
+    });
+
     document.getElementById('apply-btn').addEventListener('click', () => startAnimation(currentSymmetry));
-    
+
     document.getElementById('reset-btn').addEventListener('click', () => {
         clearSymmetryGroup();
-        endAnimation();
-        setOrbital(currentOrbital);
-        document.getElementById('symmetry-select').value = 'E';
+        symmetrySelect.value = 'E';
         currentSymmetry = 'E';
-        animationSlider.disabled = true;
+        setOrbital(orbitalSelect.value);
         animationSlider.value = 0;
     });
-    
-    document.getElementById('finish-btn').addEventListener('click', finishModule);
-    document.getElementById('reset-camera').addEventListener('click', () => {
-        camera.position.set(5, 5, 5);
-        camera.lookAt(0, 0, 0);
-        controls.reset();
-    });
-    
-    animationSlider = document.getElementById('animation-slider');
-    animationSlider.addEventListener('input', () => {
-        if (animationData && parseInt(animationSlider.value) >= 100) endAnimation();
-    });
-    animationSlider.addEventListener('mouseup', () => {
-        if (animationData && parseInt(animationSlider.value) >= 100) endAnimation();
-    });
-    animationSlider.addEventListener('touchend', () => {
-        if (animationData && parseInt(animationSlider.value) >= 100) endAnimation();
-    });
-}
 
-function cloneGroup(group) {
-    const cloned = new THREE.Group();
-    group.children.forEach(child => {
-        let c;
-        if (child.type === 'Mesh') {
-            c = child.clone();
-            c.material = child.material.clone();
-        } else if (child.type === 'LineSegments') {
-            c = child.clone();
-            if (child.material) c.material = child.material.clone();
-        } else {
-            c = child.clone();
-        }
-        if (c) cloned.add(c);
+    document.getElementById('finish-btn').addEventListener('click', finishModule);
+    document.getElementById('reset-camera').addEventListener('click', () => controls.reset());
+
+    animationSlider.addEventListener('input', () => {
+        if (animationData && parseInt(animationSlider.value, 10) >= 100) endAnimation();
     });
-    return cloned;
 }
 
 // ============================================
@@ -681,13 +688,10 @@ function cloneGroup(group) {
 // ============================================
 
 window.addEventListener('load', () => {
+    animationSlider = document.getElementById('animation-slider');
     initThreeJS();
     initSCORM();
     attachEvents();
     setOrbital('s');
-    animationSlider = document.getElementById('animation-slider');
-    animationSlider.disabled = true;
-    animationSlider.value = 0;
+    setRepresentation('spheres');
 });
-
-window.addEventListener('resize', onWindowResize);

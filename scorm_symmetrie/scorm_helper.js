@@ -17,11 +17,18 @@ var SCORM = {
     // API LMS
     api: null,
     
+    // Vrai après LMSFinish : plus aucun appel n'est autorisé par le LMS
+    terminated: false,
+    
+    // Début de la session (pour cmi.core.session_time)
+    startTime: null,
+    
     // Initialise la connexion SCORM
     init: function() {
         this.api = this.getAPI();
         if (this.api) {
             this.api.LMSInitialize("");
+            this.startTime = new Date();
             return true;
         }
         console.log("SCORM API non détectée - mode hors LMS");
@@ -40,28 +47,34 @@ var SCORM = {
         else if (window.API && window.API.LMSInitialize) {
             api = window.API;
         }
-        // Recherche dans les frames parent
+        // Recherche dans les frames parent, puis dans la fenêtre ouvrante (popup)
         else {
-            var win = window;
-            while (win.parent && win.parent !== win) {
-                win = win.parent;
-                if (win.API_LMS && win.API_LMS.LMSInitialize) {
-                    api = win.API_LMS;
-                    break;
-                }
-                if (win.API && win.API.LMSInitialize) {
-                    api = win.API;
-                    break;
-                }
+            api = this.findAPIInParents(window);
+            if (!api && window.opener) {
+                api = this.findAPIInParents(window.opener);
             }
         }
         
         return api;
     },
     
+    findAPIInParents: function(win) {
+        try {
+            for (var depth = 0; win && depth < 10; depth++) {
+                if (win.API_LMS && win.API_LMS.LMSInitialize) return win.API_LMS;
+                if (win.API && win.API.LMSInitialize) return win.API;
+                if (!win.parent || win.parent === win) break;
+                win = win.parent;
+            }
+        } catch (e) {
+            // Fenêtre d'une autre origine : inaccessible
+        }
+        return null;
+    },
+    
     // Sauvegarde une valeur SCORM
     setValue: function(element, value) {
-        if (this.api) {
+        if (this.api && !this.terminated) {
             try {
                 return this.api.LMSSetValue(element, value);
             } catch (e) {
@@ -74,7 +87,7 @@ var SCORM = {
     
     // Récupère une valeur SCORM
     getValue: function(element) {
-        if (this.api) {
+        if (this.api && !this.terminated) {
             try {
                 return this.api.LMSGetValue(element);
             } catch (e) {
@@ -85,9 +98,9 @@ var SCORM = {
         return null;
     },
     
-    // Dé commits les données
+    // Valide (commit) les données
     commit: function() {
-        if (this.api) {
+        if (this.api && !this.terminated) {
             try {
                 return this.api.LMSCommit("");
             } catch (e) {
@@ -98,9 +111,13 @@ var SCORM = {
         return false;
     },
     
-    // Termine la session SCORM
+    // Termine la session SCORM (enregistre le temps passé au préalable)
     finish: function() {
-        if (this.api) {
+        if (this.api && !this.terminated) {
+            if (this.startTime) {
+                this.setSessionTime((new Date() - this.startTime) / 1000);
+            }
+            this.terminated = true;
             try {
                 return this.api.LMSFinish("");
             } catch (e) {
@@ -164,10 +181,7 @@ window.addEventListener('load', function() {
 // Gestion du déchargement (sauvegarde avant de quitter)
 window.addEventListener('beforeunload', function() {
     try {
-        if (SCORM.api) {
-            SCORM.commit();
-            SCORM.finish();
-        }
+        SCORM.finish();
     } catch (e) {
         // Ignorer les erreurs
     }

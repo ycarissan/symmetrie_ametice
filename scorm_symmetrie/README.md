@@ -7,10 +7,13 @@ Ce package permet de visualiser les orbitales atomiques **s** et **p** (p_x, p_y
 ### ✨ Fonctionnalités
 
 - **Visualisation 3D interactive** des orbitales s et p
+- **Deux représentations**, au choix par un bouton :
+  - *Sphères* : diagramme polaire de |Y| (une orbitale p = deux sphères tangentes au noyau, de phases opposées)
+  - *Analytique* : diagramme polaire de |Y|² (densité angulaire), couleur selon le signe de Y
 - **Application des opérations de symétrie** :
   - Identité (E)
   - Plans miroir (σ_xz, σ_yz, σ_xy)
-  - Axes de rotation (C₂, C₃, C₄ autour de x, y, z)
+  - Axes de rotation (C₂ autour de x, y, z ; C₃ et C₄ autour de z)
   - Inversion (i)
 - **Affichage des résultats** avec explications pédagogiques
 - **Intégration SCORM 1.2** pour le suivi dans Moodle
@@ -31,6 +34,8 @@ scorm_symmetrie/
 ### 🚀 Installation dans Moodle
 
 1. **Télécharger** le fichier `scorm_symmetrie_module3.zip`
+   (pour le régénérer : `cd scorm_symmetrie && zip -r ../scorm_symmetrie_module3.zip .` —
+   `imsmanifest.xml` doit être à la racine de l'archive)
 2. Dans Moodle :
    - Créer une nouvelle activité **"Package SCORM"**
    - Importer le fichier `.zip`
@@ -47,7 +52,7 @@ scorm_symmetrie/
 - **Souris** : Tourner la vue (cliquer + glisser)
 - **Molette** : Zoomer/dézoomer
 - **Bouton 🔄** : Réinitialiser la caméra
-- **Bouton 🎨** : Afficher/masquer les phases (+/-)
+- **Curseur d'animation** : faire glisser jusqu'à « Fin » pour appliquer l'opération
 
 ### 🔬 Exemples de transformations
 
@@ -57,7 +62,8 @@ scorm_symmetrie/
 | p_x | C₂(z) | -p_x | Antisymétrique |
 | p_z | σ_xy | -p_z | Antisymétrique |
 | s | Toutes | s | Symétrique |
-| p_x | C₃(z) | p_y | Rotation des lobes |
+| p_x | C₄(z) | p_y | Rotation des lobes de 90° |
+| p_x | C₃(z) | −½ p_x + √3/2 p_y | Combinaison linéaire |
 
 ### 📊 Intégration SCORM
 
@@ -71,19 +77,15 @@ scorm_symmetrie/
 #### Ajouter une nouvelle orbitale
 Modifiez `script.js` :
 ```javascript
-// Dans createPOrbital()
-case 'd_z2':
-    // Ajouter la logique pour d_z2
-    break;
+// Dans stateFromName() et buildOrbital()
+// (une orbitale p est représentée par la direction de son lobe positif)
 ```
 
 #### Ajouter une nouvelle symétrie
 Modifiez `script.js` :
 ```javascript
-// Dans applySymmetry()
-case 'S4_z':
-    // Ajouter la logique pour S4
-    break;
+// Dans la table OPERATIONS (et une <option> dans index.html)
+C4_x: { kind: 'rotation', axis: AXES.x, angle: Math.PI / 2, label: 'C₄(x)' },
 ```
 
 #### Changer les couleurs
@@ -123,7 +125,7 @@ const COLORS = {
 - Essayez avec Chrome ou Firefox (meilleur support WebGL)
 
 **Problèmes de symétrie** :
-- Vérifiez les transformations dans `transformPOrbital()` dans `script.js`
+- Vérifiez la table `OPERATIONS` et `transformPoint()` dans `script.js`
 
 ### 📄 Licence
 
