@@ -26,18 +26,33 @@
         <aside class="control-panel">
             <h2>⚙️ Contrôles</h2>
             
-            <!-- Section 1: Sélection de l'orbitale -->
+            <!-- Section 1: Sélection de la molécule -->
             <div class="control-section">
-                <h3>🌐 Orbitales Atomiques</h3>
+                <h3>🧪 Molécule</h3>
                 <div class="select-group">
-                    <label for="orbital-select">Sélectionner une orbitale :</label>
-                    <select id="orbital-select">
-                        <option value="s">Orbitale s</option>
-                        <option value="p_x">Orbitale p<sub>x</sub></option>
-                        <option value="p_y">Orbitale p<sub>y</sub></option>
-                        <option value="p_z">Orbitale p<sub>z</sub></option>
+                    <label for="molecule-select">Sélectionner une molécule :</label>
+                    <select id="molecule-select">
+                        <option value="atom">Atome isolé (orbitales s et p)</option>
+                        <option value="H2O">H₂O (eau)</option>
+                        <option value="NH3">NH₃ (ammoniac)</option>
+                        <option value="CH4">CH₄ (méthane)</option>
                     </select>
+                    <p class="help-text" id="point-group"></p>
                 </div>
+            </div>
+
+            <!-- Section 2: Sélection de l'orbitale (options remplies par script.js) -->
+            <div class="control-section">
+                <h3>🌐 Orbitales de valence</h3>
+                <div class="select-group">
+                    <label for="orbital-select">Orbitale ou combinaison :</label>
+                    <select id="orbital-select"></select>
+                </div>
+                <details class="coef-editor">
+                    <summary>Coefficients de la combinaison</summary>
+                    <p class="help-text">Modifiez les coefficients pour construire n'importe quelle combinaison linéaire.</p>
+                    <div id="coef-list" class="coef-list"></div>
+                </details>
                 <div class="select-group">
                     <!-- Choix de représentation masqué : seule la représentation en sphères est proposée.
                          Retirer l'attribut hidden pour réactiver la représentation analytique. -->
@@ -52,33 +67,17 @@
                 </div>
             </div>
 
-            <!-- Section 2: Sélection de la symétrie -->
+            <!-- Section 3: Sélection de la symétrie -->
             <div class="control-section">
                 <h3>🔀 Éléments de Symétrie</h3>
                 <div class="select-group">
                     <label for="symmetry-select">Sélectionner une opération :</label>
-                    <select id="symmetry-select">
-                        <option value="E">Identité (E)</option>
-                        <optgroup label="Plans miroir (σ)">
-                            <option value="sigma_xz">σ<sub>xz</sub> (plan xz)</option>
-                            <option value="sigma_yz">σ<sub>yz</sub> (plan yz)</option>
-                            <option value="sigma_xy">σ<sub>xy</sub> (plan xy)</option>
-                        </optgroup>
-                        <optgroup label="Axes de rotation (Cₙ)">
-                            <option value="C2_x">C<sub>2</sub>(x) - Rotation 180° autour de x</option>
-                            <option value="C2_y">C<sub>2</sub>(y) - Rotation 180° autour de y</option>
-                            <option value="C2_z">C<sub>2</sub>(z) - Rotation 180° autour de z</option>
-                            <option value="C3_z">C<sub>3</sub>(z) - Rotation 120° autour de z</option>
-                            <option value="C4_z">C<sub>4</sub>(z) - Rotation 90° autour de z</option>
-                        </optgroup>
-                        <optgroup label="Autres">
-                            <option value="i">Inversion (i)</option>
-                        </optgroup>
-                    </select>
+                    <!-- Opérations du groupe ponctuel de la molécule, remplies par script.js -->
+                    <select id="symmetry-select"></select>
                 </div>
             </div>
 
-            <!-- Section 3: Actions -->
+            <!-- Section 4: Actions -->
             <div class="control-section">
                 <h3>⚡ Actions</h3>
                 <button id="apply-btn" class="btn btn-primary">
@@ -89,7 +88,7 @@
                 </button>
             </div>
 
-            <!-- Section 4: Contrôle de l'animation -->
+            <!-- Section 5: Contrôle de l'animation -->
             <div class="control-section">
                 <h3>🎬 Contrôle Animation</h3>
                 <div class="slider-container">
@@ -102,16 +101,16 @@
                 </div>
             </div>
 
-            <!-- Section 5: Explications -->
+            <!-- Section 6: Explications -->
             <div class="control-section">
                 <h3>ℹ️ Résultat</h3>
                 <div id="explanation" class="explanation">
                     <h4>Attente...</h4>
-                    <p>Sélectionnez une orbitale et une opération de symétrie, puis cliquez sur "Appliquer".</p>
+                    <p>Sélectionnez une molécule, une orbitale et une opération de symétrie, puis cliquez sur "Appliquer".</p>
                 </div>
             </div>
 
-            <!-- Section 6: Navigation -->
+            <!-- Section 7: Navigation -->
             <div class="control-section">
                 <h3>📖 Navigation</h3>
                 <p class="help-text">Module 3 : Atome Isolé</p>
@@ -125,7 +124,7 @@
         <main class="canvas-container">
             <canvas id="three-canvas"></canvas>
             <div class="orbital-info" id="orbital-info">
-                Orbitale : <span id="current-orbital">s</span>
+                Fonction : <span id="current-orbital"></span>
             </div>
             <!-- Légende en bas à gauche avec tooltip -->
             <div class="legend-container">
@@ -133,7 +132,8 @@
                 <div class="legend-tooltip" id="legend-tooltip">
                     <strong>Phases des orbitales :</strong><br>
                     <span style="color: #E63946;">● </span> Phase positive (+)<br>
-                    <span style="color: #4A6FA5;">● </span> Phase négative (-)
+                    <span style="color: #4A6FA5;">● </span> Phase négative (-)<br>
+                    Taille proportionnelle au coefficient
                 </div>
             </div>
             <div class="camera-controls">
